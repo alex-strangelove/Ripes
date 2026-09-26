@@ -5,6 +5,7 @@
 #include "isa/rv32isainfo.h"
 
 #include "assembler/assembler.h"
+#include "assembler/objdump.h"
 
 #include "processorhandler.h"
 
@@ -46,6 +47,7 @@ private slots:
   void tst_riscv();
   void tst_relativeLabels();
   void tst_parentheses();
+  void tst_objdumpUnknownInstruction();
 
 private:
   QString createProgram(int entries) {
@@ -423,6 +425,29 @@ void tst_Assembler::tst_parentheses() {
   testAssemble(QStringList() << "lw x0, 0(x1 # ignored )", Expect::Fail);
   testAssemble(QStringList() << "#(valid parentheses match)", Expect::Success);
   testAssemble(QStringList() << "#)nonmatching parentheses(", Expect::Success);
+}
+
+void tst_Assembler::tst_objdumpUnknownInstruction() {
+  ProcessorHandler::selectProcessor(ProcessorID::RV32_SS, {"M"});
+  auto program = std::make_shared<Program>();
+  // Startup code may contain an unsupported CSR instruction. It must not
+  // prevent subsequent ordinary instructions from being displayed.
+  program->sections[TEXT_SECTION_NAME] = {
+      TEXT_SECTION_NAME, 0x10104,
+      QByteArray::fromHex("630405007310750117350000")};
+
+  AddrOffsetMap offsets;
+  const auto listing = objdump(program, offsets);
+  QCOMPARE(listing.count("Unknown instruction"), 1);
+  QVERIFY(listing.contains("10104:        00050463        beq x10 x0 8"));
+  QVERIFY(listing.contains("10108:        01751073        Unknown instruction"));
+  QVERIFY(listing.contains("1010c:        00003517        auipc x10 0x3"));
+
+  const auto binary = binobjdump(program, offsets);
+  QVERIFY(binary.contains("10108:        01751073        " +
+                          QString::number(0x01751073, 2).rightJustified(32, '0')));
+  QVERIFY(binary.contains("1010c:        00003517        " +
+                          QString::number(0x00003517, 2).rightJustified(32, '0')));
 }
 
 QTEST_APPLESS_MAIN(tst_Assembler)

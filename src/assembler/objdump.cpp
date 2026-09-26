@@ -74,9 +74,11 @@ QString stringifyProgram(std::weak_ptr<const Program> program,
         // counter by the default instruction size of the ISA. std::min with
         // buffer size in the edge case that we're erroring on a single
         // instruction which is smaller than the default instruction width.
-        addr += std::min(static_cast<unsigned>(buffer.size()), instrBytes);
-      } else
-        addr += disres.bytesDisassembled;
+        disres.bytesDisassembled =
+            std::min(static_cast<unsigned>(buffer.size()), instrBytes);
+      }
+      // Consume the same bytes that we advance past, including on errors.
+      addr += disres.bytesDisassembled;
       assert(buffer.size() >= disres.bytesDisassembled);
 
       // Instruction word
@@ -138,6 +140,10 @@ QString binobjdump(const std::shared_ptr<const Program> &program,
           instr |= (buffer[i] & 0xFF) << (CHAR_BIT * i);
         }
         auto disRes = assembler->disassemble(instr, program->symbols, address);
+        if (disRes.err.has_value()) {
+          disRes.bytesDisassembled =
+              std::min(static_cast<unsigned>(buffer.size()), instrBytes);
+        }
         disRes.repr.clear();
         for (size_t i = 0; i < disRes.bytesDisassembled; ++i) {
           disRes.repr.prepend(QString()
